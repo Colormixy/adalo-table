@@ -1,9 +1,8 @@
-<div id="cfg" style="font:12px system-ui;margin:6px 0;color:#666"></div>
 <!doctype html>
 <html lang="ru">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Adalo Table v3</title>
+<title>Adalo Table vURL</title>
 <style>
   :root { --pad: 10px; --border: 1px solid #ddd; }
   * { box-sizing: border-box; }
@@ -13,33 +12,38 @@
   th, td { border: var(--border); padding:8px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; text-align:center; }
   thead th { position: sticky; top:0; background:#fafafa; white-space: normal; word-break: break-word; text-align:center; }
   tbody tr:nth-child(odd){ background:#fcfcfc; }
-  .bar{display:flex;gap:8px;margin:6px 0 10px}
-  .btn{border:1px solid #ddd;padding:6px 10px;border-radius:6px;background:#f7f7f7;cursor:pointer}
+  .meta{display:flex;gap:8px;margin:6px 0 10px;align-items:center}
+  .cfg{font:12px system-ui;color:#666}
 </style>
 <div class="wrap">
-  <div class="bar">
-    <button class="btn" id="refreshBtn">Обновить</button>
-    <small id="ts"></small>
+  <div class="meta">
+    <small id="ts" class="cfg"></small>
+    <small id="cfg" class="cfg"></small>
   </div>
   <table id="t"><thead></thead><tbody></tbody></table>
 </div>
 <script>
-/* === НАСТРОЙКИ === */
-const TSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEFIQibBd7WSJn-PrlsjJvKiTqAW3sUDxJO7s5Aq9woewpqaBBNIrTJvwyaijdJKSN9ULR4jP9I__w/pub?gid=0&single=true&output=tsv";
-const ROWS = 27;                 // сколько строк показывать (включая заголовок)
-const COLS = 3;                 // сколько столбцов показывать
+/* === НАСТРОЙКИ ПО УМОЛЧАНИЮ (можно переопределить через URL) === */
+const DEFAULT_TSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEFIQibBd7WSJn-PrlsjJvKiTqAW3sUDxJO7s5Aq9woewpqaBBNIrTJvwyaijdJKSN9ULR4jP9I__w/pub?gid=0&single=true&output=tsv";
+const DEFAULT_ROWS = 3;   // если не переданы ?rows и ?cols
+const DEFAULT_COLS = 3;
 const USE_FIRST_ROW_AS_HEADER = true;
-const REFRESH_EVERY_MS = 20000; // авто-обновление (поставь 5000 если надо чаще)
+const REFRESH_EVERY_MS = 20000;
 
-  document.getElementById('cfg').textContent = `ROWS=${ROWS}, COLS=${COLS}`;
-console.log('ROWS=', ROWS, 'COLS=', COLS);
+/* === Чтение параметров из URL: ?rows=27&cols=3&tsv=<url> === */
+const sp = new URLSearchParams(location.search);
+let TSV_URL = sp.get("tsv") || DEFAULT_TSV_URL;
+let ROWS = Number(sp.get("rows") || DEFAULT_ROWS);
+let COLS = Number(sp.get("cols") || DEFAULT_COLS);
 
-// Ломаем кэш Adalo (страница каждый раз с уникальным query)
-(function bustAdaloCache(){
-  const p = new URL(window.location.href);
-  p.searchParams.set("v", Date.now().toString());
-  window.history.replaceState({}, "", p.toString());
+/* Ломаем кэш, но СОХРАНЯЕМ существующие параметры (?rows, ?cols, ?tsv) */
+(function bustCachePreservingParams(){
+  const u = new URL(window.location.href);
+  u.searchParams.set("v", Date.now().toString());
+  window.history.replaceState({}, "", u.toString());
 })();
+
+document.getElementById('cfg').textContent = `ROWS=${ROWS}, COLS=${COLS}`;
 
 async function fetchTSV(){
   const url = TSV_URL + (TSV_URL.includes("?") ? "&" : "?") + "_cb=" + Date.now();
@@ -49,7 +53,8 @@ async function fetchTSV(){
 
 function render(text){
   const rowsAll = text.split(/\r?\n/).filter(Boolean);
-  const rows = rowsAll.slice(0, ROWS).map(r => r.split("\t").slice(0, COLS));
+  const takeRows = Math.min(ROWS, rowsAll.length);
+  const rows = rowsAll.slice(0, takeRows).map(r => r.split("\t").slice(0, COLS));
 
   const thead = document.querySelector("#t thead");
   const tbody = document.querySelector("#t tbody");
@@ -83,18 +88,8 @@ async function loadAndRender(){
   catch(e){ console.error("TSV fetch error:", e); }
 }
 
-// — стартовая загрузка
 loadAndRender();
-
-// — авто-обновление
 setInterval(loadAndRender, REFRESH_EVERY_MS);
-
-// — мгновенное обновление, когда экран снова виден (возврат в этот экран в Adalo)
-document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) loadAndRender();
-});
-
-// — ручная кнопка "Обновить"
-document.getElementById("refreshBtn").addEventListener("click", loadAndRender);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadAndRender(); });
 </script>
 </html>
