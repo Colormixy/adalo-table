@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Adalo Table 3x3</title>
+<style>
+  :root { --pad: 10px; --border: 1px solid #ddd; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #fff; }
+  .wrap { padding: var(--pad); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: var(--border); padding: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  thead th { position: sticky; top: 0; background: #fafafa; }
+  tbody tr:nth-child(odd) { background: #fcfcfc; }
+</style>
+<div class="wrap">
+  <table id="t"><thead></thead><tbody></tbody></table>
+</div>
+<script>
+(async () => {
+  // === НАСТРОЙКИ ===
+  const TSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEFIQibBd7WSJn-PrlsjJvKiTqAW3sUDxJO7s5Aq9woewpqaBBNIrTJvwyaijdJKSN9ULR4jP9I__w/pub?gid=0&single=true&output=tsv";
+  const ROWS = 3;                 // сколько строк выводить (включая строку заголовка, если она есть)
+  const COLS = 3;                 // сколько столбцов выводить
+  const USE_FIRST_ROW_AS_HEADER = true; // true = первая строка — заголовки
+
+  // Кэш-бастинг, чтобы данные обновлялись сразу
+  const url = TSV_URL + (TSV_URL.includes("?") ? "&" : "?") + "_=" + Date.now();
+
+  const res = await fetch(url, { cache: "no-store" });
+  const text = (await res.text()).trim();
+
+  // Простейший парсер TSV
+  const rowsAll = text.split(/\r?\n/).filter(r => r.length > 0);
+  const rows = rowsAll.slice(0, ROWS).map(r => r.split("\t").slice(0, COLS));
+
+  const thead = document.querySelector("#t thead");
+  const tbody = document.querySelector("#t tbody");
+
+  if (!rows.length) return;
+
+  if (USE_FIRST_ROW_AS_HEADER) {
+    const head = rows[0];
+    const tr = document.createElement("tr");
+    head.forEach(c => {
+      const th = document.createElement("th");
+      th.textContent = c ?? "";
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+
+    rows.slice(1).forEach(row => {
+      const tr = document.createElement("tr");
+      for (let i = 0; i < COLS; i++) {
+        const td = document.createElement("td");
+        td.textContent = (row[i] ?? "");
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  } else {
+    rows.forEach(row => {
+      const tr = document.createElement("tr");
+      for (let i = 0; i < COLS; i++) {
+        const td = document.createElement("td");
+        td.textContent = (row[i] ?? "");
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    });
+  }
+})();
+</script>
+</html>
