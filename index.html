@@ -1,8 +1,9 @@
+<div id="cfg" style="font:12px system-ui;margin:6px 0;color:#666"></div>
 <!doctype html>
 <html lang="ru">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Adalo Table</title>
+<title>Adalo Table v3</title>
 <style>
   :root { --pad: 10px; --border: 1px solid #ddd; }
   * { box-sizing: border-box; }
@@ -29,6 +30,9 @@ const ROWS = 27;                 // сколько строк показыват
 const COLS = 3;                 // сколько столбцов показывать
 const USE_FIRST_ROW_AS_HEADER = true;
 const REFRESH_EVERY_MS = 20000; // авто-обновление (поставь 5000 если надо чаще)
+
+  document.getElementById('cfg').textContent = `ROWS=${ROWS}, COLS=${COLS}`;
+console.log('ROWS=', ROWS, 'COLS=', COLS);
 
 // Ломаем кэш Adalo (страница каждый раз с уникальным query)
 (function bustAdaloCache(){
