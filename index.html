@@ -2,44 +2,95 @@
 <html lang="ru">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Adalo Table (const)</title>
+<title>Adalo Table (rate header)</title>
 <style>
   :root { --pad: 10px; --border: 1px solid #ddd; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; }
   .wrap { padding: var(--pad); }
-  table { width:100%; border-collapse: collapse; table-layout: fixed; }
-  th, td {
-    border: var(--border);
+
+  /* HERO-БЛОК НАД ТАБЛИЦЕЙ */
+  .hero{
+    text-align:center;
+    margin:6px 0 12px;
+    line-height:1.15;
+  }
+  .hero .line1{
+    font-weight:700;
+    font-size:22px;
+    color:#d32f2f; /* красный */
+  }
+  .hero .line2{
+    margin-top:6px;
+    font-weight:700;
+    font-size:28px;
+    color:#d32f2f;
+  }
+
+  /* Таблица */
+  table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  th,td{
+    border:var(--border);
     padding:8px;
     overflow:hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: center;     /* центрируем содержимое */
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    text-align:center;
   }
-  thead th {                /* заголовки с переносом */
-    position: sticky; top:0; background:#fafafa;
-    white-space: normal; word-break: break-word;
+  thead th{
+    position:sticky; top:0; background:#fafafa;
+    white-space:normal; word-break:break-word; /* переноси заголовки */
   }
   tbody tr:nth-child(odd){ background:#fcfcfc; }
 </style>
 <div class="wrap">
+  <!-- Блок курса -->
+  <div class="hero">
+    <div class="line1">Курс на <span id="dateKyiv">--.--.--</span></div>
+    <div class="line2">$ - <span id="rateValue">--</span></div>
+  </div>
+
+  <!-- Таблица -->
   <table id="t"><thead></thead><tbody></tbody></table>
 </div>
 <script>
 /* === НАСТРОЙКИ — МЕНЯЙ ЗДЕСЬ === */
 const TSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEFIQibBd7WSJn-PrlsjJvKiTqAW3sUDxJO7s5Aq9woewpqaBBNIrTJvwyaijdJKSN9ULR4jP9I__w/pub?gid=0&single=true&output=tsv";
-const ROWS = 27;         // ← сколько СТРОК показывать (включая первую строку, если она заголовок)
-const COLS = 3;         // ← сколько СТОЛБЦОВ показывать
-const USE_FIRST_ROW_AS_HEADER = true;  // true = первая строка — заголовки
-const REFRESH_EVERY_MS = 20000;        // авто-обновление (мс)
+const ROWS = 27;                      // сколько строк показывать (включая заголовок, если он используется)
+const COLS = 3;                      // сколько столбцов показывать
+const USE_FIRST_ROW_AS_HEADER = true;
+const REFRESH_EVERY_MS = 20000;      // автообновление
 
-/* Ломаем кэш Adalo/браузера (уникальный ?v=timestamp в URL страницы) */
+/* откуда брать курс — E2 */
+const RATE_CELL_ROW = 2;             // 2-я строка (1-based)
+const RATE_CELL_COL = "E";           // колонка 'E'
+
+/* Ломаем кэш страницы (добавляем ?v=timestamp, не трогая сам tsv) */
 (function () {
   const u = new URL(window.location.href);
   u.searchParams.set("v", Date.now().toString());
   window.history.replaceState({}, "", u.toString());
 })();
+
+/* утилита: A→0, B→1, ..., Z→25, AA→26 ... */
+function colLetterToIndex(col){
+  let n = 0;
+  for (const ch of col.toUpperCase()){
+    const c = ch.charCodeAt(0);
+    if (c < 65 || c > 90) continue;
+    n = n*26 + (c - 64);
+  }
+  return n - 1; // zero-based
+}
+
+/* форматируем дату Киева как дд.мм.гг */
+function kyivDateDDMMYY(){
+  const fmt = new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "2-digit", month: "2-digit", year: "2-digit"
+  });
+  return fmt.format(new Date());
+}
 
 async function fetchTSV() {
   const url = TSV_URL + (TSV_URL.includes("?") ? "&" : "?") + "_cb=" + Date.now();
@@ -48,9 +99,23 @@ async function fetchTSV() {
 }
 
 function render(text) {
-  const rowsAll = text.split(/\r?\n/).filter(Boolean);
-  const takeRows = Math.min(ROWS, rowsAll.length);
-  const rows = rowsAll.slice(0, takeRows).map(r => r.split("\t").slice(0, COLS));
+  // === 1) Обновим шапку (дата + курс из E2) ===
+  document.getElementById("dateKyiv").textContent = kyivDateDDMMYY();
+
+  const allRows = text.split(/\r?\n/).filter(Boolean);
+  const rateRowIdx = RATE_CELL_ROW - 1;
+  const rateColIdx = colLetterToIndex(RATE_CELL_COL);
+  let rate = "";
+
+  if (allRows[rateRowIdx]) {
+    const cols = allRows[rateRowIdx].split("\t");
+    rate = (cols[rateColIdx] ?? "").toString().trim();
+  }
+  document.getElementById("rateValue").textContent = rate || "--";
+
+  // === 2) Рендер таблицы (ограничение по ROWS/COLS) ===
+  const takeRows = Math.min(ROWS, allRows.length);
+  const rows = allRows.slice(0, takeRows).map(r => r.split("\t").slice(0, COLS));
 
   const thead = document.querySelector("#t thead");
   const tbody = document.querySelector("#t tbody");
@@ -61,17 +126,13 @@ function render(text) {
 
   if (USE_FIRST_ROW_AS_HEADER) {
     const head = rows[0];
-    const trHead = document.createElement("tr");
-    head.forEach(c => {
-      const th = document.createElement("th");
-      th.textContent = c ?? "";
-      trHead.appendChild(th);
-    });
-    thead.appendChild(trHead);
+    const trH = document.createElement("tr");
+    head.forEach(c => { const th = document.createElement("th"); th.textContent = c ?? ""; trH.appendChild(th); });
+    thead.appendChild(trH);
 
     rows.slice(1).forEach(row => {
       const tr = document.createElement("tr");
-      for (let i = 0; i < COLS; i++) {
+      for (let i = 0; i < COLS; i++){
         const td = document.createElement("td");
         td.textContent = row[i] ?? "";
         tr.appendChild(td);
@@ -81,7 +142,7 @@ function render(text) {
   } else {
     rows.forEach(row => {
       const tr = document.createElement("tr");
-      for (let i = 0; i < COLS; i++) {
+      for (let i = 0; i < COLS; i++){
         const td = document.createElement("td");
         td.textContent = row[i] ?? "";
         tr.appendChild(td);
@@ -98,6 +159,7 @@ async function loadAndRender() {
 
 loadAndRender();
 setInterval(loadAndRender, REFRESH_EVERY_MS);
+/* обновляем при возврате на экран/вкладку */
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadAndRender(); });
 </script>
 </html>
