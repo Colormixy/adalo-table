@@ -2,49 +2,48 @@
 <html lang="ru">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Adalo Table (rate header)</title>
+<title>Rates + Table</title>
 <style>
   :root { --pad: 10px; --border: 1px solid #ddd; }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: auto;                    /* скролл везде */
+    -webkit-overflow-scrolling: touch; /* инерция на iOS */
+    touch-action: pan-y;               /* явный вертикальный жест */
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #fff;
+  }
+
   .wrap { padding: var(--pad); }
 
-  /* HERO-БЛОК НАД ТАБЛИЦЕЙ */
-  .hero{
-    text-align:center;
-    margin:6px 0 12px;
-    line-height:1.15;
-  }
-  .hero .line1{
-    font-weight:700;
-    font-size:22px;
-    color:#d32f2f; /* красный */
-  }
-  .hero .line2{
-    margin-top:6px;
-    font-weight:700;
-    font-size:28px;
-    color:#d32f2f;
-  }
+  /* Хедер с курсом */
+  .hero { text-align: center; margin: 6px 0 12px; line-height: 1.15; }
+  .hero .line1 { font-weight: 700; font-size: 22px; color: #d32f2f; }
+  .hero .line2 { margin-top: 6px; font-weight: 700; font-size: 28px; color: #d32f2f; }
 
   /* Таблица */
-  table{ width:100%; border-collapse:collapse; table-layout:fixed; }
-  th,td{
-    border:var(--border);
-    padding:8px;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-    text-align:center;
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td {
+    border: var(--border);
+    padding: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
   }
-  thead th{
-    position:sticky; top:0; background:#fafafa;
-    white-space:normal; word-break:break-word; /* переноси заголовки */
+  thead th {                       /* БЕЗ sticky — чтобы не ломал скролл на Android */
+    background: #fafafa;
+    white-space: normal;           /* перенос заголовков */
+    word-break: break-word;
   }
   tbody tr:nth-child(odd){ background:#fcfcfc; }
 </style>
+
 <div class="wrap">
-  <!-- Блок курса -->
+  <!-- Курс -->
   <div class="hero">
     <div class="line1">Курс на <span id="dateKyiv">--.--.--</span></div>
     <div class="line2"><span id="rateValue">--</span></div>
@@ -53,26 +52,29 @@
   <!-- Таблица -->
   <table id="t"><thead></thead><tbody></tbody></table>
 </div>
+
 <script>
-/* === НАСТРОЙКИ — МЕНЯЙ ЗДЕСЬ === */
+/* === НАСТРОЙКИ — МЕНЯЙ ТОЛЬКО ЭТО === */
 const TSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEFIQibBd7WSJn-PrlsjJvKiTqAW3sUDxJO7s5Aq9woewpqaBBNIrTJvwyaijdJKSN9ULR4jP9I__w/pub?gid=0&single=true&output=tsv";
-const ROWS = 27;                      // сколько строк показывать (включая заголовок, если он используется)
-const COLS = 3;                      // сколько столбцов показывать
+const ROWS = 27;                    // Сколько строк показывать (если USE_FIRST_ROW_AS_HEADER=true, сюда входит строка заголовка)
+const COLS = 3;                     // Сколько столбцов показывать
 const USE_FIRST_ROW_AS_HEADER = true;
-const REFRESH_EVERY_MS = 20000;      // автообновление
+const REFRESH_EVERY_MS = 20000;     // Автообновление данных, мс
 
-/* откуда брать курс — E2 */
-const RATE_CELL_ROW = 2;             // 2-я строка (1-based)
-const RATE_CELL_COL = "E";           // колонка 'E'
+/* Ячейка с курсом (E2) */
+const RATE_CELL_ROW = 2;            // строка 2 (1-based)
+const RATE_CELL_COL = "E";          // колонка E
 
-/* Ломаем кэш страницы (добавляем ?v=timestamp, не трогая сам tsv) */
+/* ——— Служебные штуки ——— */
+
+/* Ломаем кэш WebView/браузера (но не трогаем сам TSV) */
 (function () {
   const u = new URL(window.location.href);
   u.searchParams.set("v", Date.now().toString());
   window.history.replaceState({}, "", u.toString());
 })();
 
-/* утилита: A→0, B→1, ..., Z→25, AA→26 ... */
+/* A→0, B→1, ..., AA→26 */
 function colLetterToIndex(col){
   let n = 0;
   for (const ch of col.toUpperCase()){
@@ -80,10 +82,10 @@ function colLetterToIndex(col){
     if (c < 65 || c > 90) continue;
     n = n*26 + (c - 64);
   }
-  return n - 1; // zero-based
+  return n - 1;
 }
 
-/* форматируем дату Киева как дд.мм.гг */
+/* Дата Киева dd.mm.yy */
 function kyivDateDDMMYY(){
   const fmt = new Intl.DateTimeFormat("uk-UA", {
     timeZone: "Europe/Kyiv",
@@ -92,28 +94,27 @@ function kyivDateDDMMYY(){
   return fmt.format(new Date());
 }
 
-async function fetchTSV() {
+async function fetchTSV(){
   const url = TSV_URL + (TSV_URL.includes("?") ? "&" : "?") + "_cb=" + Date.now();
   const res = await fetch(url, { cache: "no-store" });
   return (await res.text()).trim();
 }
 
-function render(text) {
-  // === 1) Обновим шапку (дата + курс из E2) ===
+function render(text){
+  // 1) Верхний блок: дата + курс
   document.getElementById("dateKyiv").textContent = kyivDateDDMMYY();
 
   const allRows = text.split(/\r?\n/).filter(Boolean);
   const rateRowIdx = RATE_CELL_ROW - 1;
   const rateColIdx = colLetterToIndex(RATE_CELL_COL);
   let rate = "";
-
   if (allRows[rateRowIdx]) {
     const cols = allRows[rateRowIdx].split("\t");
     rate = (cols[rateColIdx] ?? "").toString().trim();
   }
   document.getElementById("rateValue").textContent = rate || "--";
 
-  // === 2) Рендер таблицы (ограничение по ROWS/COLS) ===
+  // 2) Таблица
   const takeRows = Math.min(ROWS, allRows.length);
   const rows = allRows.slice(0, takeRows).map(r => r.split("\t").slice(0, COLS));
 
@@ -124,7 +125,7 @@ function render(text) {
 
   if (!rows.length) return;
 
-  if (USE_FIRST_ROW_AS_HEADER) {
+  if (USE_FIRST_ROW_AS_HEADER){
     const head = rows[0];
     const trH = document.createElement("tr");
     head.forEach(c => { const th = document.createElement("th"); th.textContent = c ?? ""; trH.appendChild(th); });
@@ -152,14 +153,14 @@ function render(text) {
   }
 }
 
-async function loadAndRender() {
+async function loadAndRender(){
   try { const t = await fetchTSV(); render(t); }
-  catch (e) { console.error("TSV fetch error:", e); }
+  catch(e){ console.error("TSV fetch error:", e); }
 }
 
 loadAndRender();
 setInterval(loadAndRender, REFRESH_EVERY_MS);
-/* обновляем при возврате на экран/вкладку */
+/* Обновляем при возврате на экран/вкладку */
 document.addEventListener("visibilitychange", () => { if (!document.hidden) loadAndRender(); });
 </script>
 </html>
