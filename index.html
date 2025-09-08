@@ -1,166 +1,309 @@
-<!doctype html>
-<html lang="ru">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Rates + Table</title>
-<style>
-  :root { --pad: 10px; --border: 1px solid #ddd; }
-  * { box-sizing: border-box; }
+// src/Table.js
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, StyleSheet, Image } from "react-native";
 
-  html, body {
-    margin: 0;
-    height: 100%;
-    overflow: auto;                    /* скролл везде */
-    -webkit-overflow-scrolling: touch; /* инерция на iOS */
-    touch-action: pan-y;               /* явный вертикальный жест */
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    background: #fff;
-  }
-
-  .wrap { padding: var(--pad); }
-
-  /* Хедер с курсом */
-  .hero { text-align: center; margin: 6px 0 12px; line-height: 1.15; }
-  .hero .line1 { font-weight: 700; font-size: 22px; color: #d32f2f; }
-  .hero .line2 { margin-top: 6px; font-weight: 700; font-size: 28px; color: #d32f2f; }
-
-  /* Таблица */
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  th, td {
-    border: var(--border);
-    padding: 8px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: center;
-  }
-  thead th {                       /* БЕЗ sticky — чтобы не ломал скролл на Android */
-    background: #fafafa;
-    white-space: normal;           /* перенос заголовков */
-    word-break: break-word;
-  }
-  tbody tr:nth-child(odd){ background:#fcfcfc; }
-</style>
-
-<div class="wrap">
-  <!-- Курс -->
-  <div class="hero">
-    <div class="line1">Курс на <span id="dateKyiv">--.--.--</span></div>
-    <div class="line2"><span id="rateValue">--</span></div>
-  </div>
-
-  <!-- Таблица -->
-  <table id="t"><thead></thead><tbody></tbody></table>
-</div>
-
-<script>
-/* === НАСТРОЙКИ — МЕНЯЙ ТОЛЬКО ЭТО === */
-const TSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSEFIQibBd7WSJn-PrlsjJvKiTqAW3sUDxJO7s5Aq9woewpqaBBNIrTJvwyaijdJKSN9ULR4jP9I__w/pub?gid=0&single=true&output=tsv";
-const ROWS = 27;                    // Сколько строк показывать (если USE_FIRST_ROW_AS_HEADER=true, сюда входит строка заголовка)
-const COLS = 3;                     // Сколько столбцов показывать
-const USE_FIRST_ROW_AS_HEADER = true;
-const REFRESH_EVERY_MS = 20000;     // Автообновление данных, мс
-
-/* Ячейка с курсом (E2) */
-const RATE_CELL_ROW = 2;            // строка 2 (1-based)
-const RATE_CELL_COL = "E";          // колонка E
-
-/* ——— Служебные штуки ——— */
-
-/* Ломаем кэш WebView/браузера (но не трогаем сам TSV) */
-(function () {
-  const u = new URL(window.location.href);
-  u.searchParams.set("v", Date.now().toString());
-  window.history.replaceState({}, "", u.toString());
-})();
-
-/* A→0, B→1, ..., AA→26 */
-function colLetterToIndex(col){
+/* A->0, B->1, ..., AA->26 */
+function colLetterToIndex(col) {
   let n = 0;
-  for (const ch of col.toUpperCase()){
-    const c = ch.charCodeAt(0);
-    if (c < 65 || c > 90) continue;
-    n = n*26 + (c - 64);
-  }
-  return n - 1;
-}
-
-/* Дата Киева dd.mm.yy */
-function kyivDateDDMMYY(){
-  const fmt = new Intl.DateTimeFormat("uk-UA", {
-    timeZone: "Europe/Kyiv",
-    day: "2-digit", month: "2-digit", year: "2-digit"
-  });
-  return fmt.format(new Date());
-}
-
-async function fetchTSV(){
-  const url = TSV_URL + (TSV_URL.includes("?") ? "&" : "?") + "_cb=" + Date.now();
-  const res = await fetch(url, { cache: "no-store" });
-  return (await res.text()).trim();
-}
-
-function render(text){
-  // 1) Верхний блок: дата + курс
-  document.getElementById("dateKyiv").textContent = kyivDateDDMMYY();
-
-  const allRows = text.split(/\r?\n/).filter(Boolean);
-  const rateRowIdx = RATE_CELL_ROW - 1;
-  const rateColIdx = colLetterToIndex(RATE_CELL_COL);
-  let rate = "";
-  if (allRows[rateRowIdx]) {
-    const cols = allRows[rateRowIdx].split("\t");
-    rate = (cols[rateColIdx] ?? "").toString().trim();
-  }
-  document.getElementById("rateValue").textContent = rate || "--";
-
-  // 2) Таблица
-  const takeRows = Math.min(ROWS, allRows.length);
-  const rows = allRows.slice(0, takeRows).map(r => r.split("\t").slice(0, COLS));
-
-  const thead = document.querySelector("#t thead");
-  const tbody = document.querySelector("#t tbody");
-  thead.innerHTML = "";
-  tbody.innerHTML = "";
-
-  if (!rows.length) return;
-
-  if (USE_FIRST_ROW_AS_HEADER){
-    const head = rows[0];
-    const trH = document.createElement("tr");
-    head.forEach(c => { const th = document.createElement("th"); th.textContent = c ?? ""; trH.appendChild(th); });
-    thead.appendChild(trH);
-
-    rows.slice(1).forEach(row => {
-      const tr = document.createElement("tr");
-      for (let i = 0; i < COLS; i++){
-        const td = document.createElement("td");
-        td.textContent = row[i] ?? "";
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
+  (col || "")
+    .toUpperCase()
+    .split("")
+    .forEach((ch) => {
+      const code = ch.charCodeAt(0);
+      if (code >= 65 && code <= 90) n = n * 26 + (code - 64);
     });
-  } else {
-    rows.forEach(row => {
-      const tr = document.createElement("tr");
-      for (let i = 0; i < COLS; i++){
-        const td = document.createElement("td");
-        td.textContent = row[i] ?? "";
-        tr.appendChild(td);
-      }
-      tbody.appendChild(tr);
+  return Math.max(0, n - 1);
+}
+/* "E2" => { r:1, c:4 } zero-based */
+function parseCellRef(ref) {
+  const m = (ref || "").match(/^([A-Za-z]+)(\d+)$/);
+  if (!m) return { r: 0, c: 0 };
+  return { r: Math.max(0, parseInt(m[2], 10) - 1), c: colLetterToIndex(m[1]) };
+}
+/* dd.mm.yy Europe/Kyiv */
+function kyivDateDDMMYY() {
+  try {
+    const fmt = new Intl.DateTimeFormat("uk-UA", {
+      timeZone: "Europe/Kyiv",
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
     });
+    return fmt.format(new Date());
+  } catch {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yy = String(d.getFullYear()).slice(-2);
+    return `${dd}.${mm}.${yy}`;
   }
 }
 
-async function loadAndRender(){
-  try { const t = await fetchTSV(); render(t); }
-  catch(e){ console.error("TSV fetch error:", e); }
-}
+export default function KyivRateTable(props) {
+  const {
+    tsvUrl,
 
-loadAndRender();
-setInterval(loadAndRender, REFRESH_EVERY_MS);
-/* Обновляем при возврате на экран/вкладку */
-document.addEventListener("visibilitychange", () => { if (!document.hidden) loadAndRender(); });
-</script>
-</html>
+    // таблица
+    rows = 27,
+    cols = 3,
+    firstRowHeader = true,
+
+    // ячейки
+    rateCell = "E2",
+    newsCell = "G2",
+    brandsImgCell = "I2",
+
+    // автообновление
+    autoRefreshMs = 20000,
+
+    // стили
+    accentColor = "#d32f2f",
+    borderColor = "#ddd",
+    textColor = "#111",
+    fontSize = 14,
+    rowHeight = 36,
+    headerHeight = 40,
+    padding = 10,
+
+    // высота изображения брендов (ширина адаптивная)
+    brandsImgHeight = 267, // <- как просил, по умолчанию 267
+  } = props;
+
+  const [tsvText, setTsvText] = useState("");
+  const timerRef = useRef(null);
+
+  async function load() {
+    if (!tsvUrl) return;
+    try {
+      const url =
+        tsvUrl + (tsvUrl.includes("?") ? "&" : "?") + "_cb=" + Date.now();
+      const res = await fetch(url, { cache: "no-store" });
+      const text = await res.text();
+      setTsvText(text.trim());
+    } catch {}
+  }
+
+  useEffect(() => {
+    load();
+    if (autoRefreshMs > 0) {
+      timerRef.current = setInterval(load, autoRefreshMs);
+      return () => timerRef.current && clearInterval(timerRef.current);
+    }
+  }, [tsvUrl, autoRefreshMs]);
+
+  const parsed = useMemo(() => {
+    const lines = tsvText ? tsvText.split(/\r?\n/).filter(Boolean) : [];
+    const takeRows = Math.min(rows, lines.length);
+    const grid = lines
+      .slice(0, takeRows)
+      .map((ln) => ln.split("\t").slice(0, cols));
+
+    const getCell = (ref) => {
+      const { r, c } = parseCellRef(ref);
+      if (!lines[r]) return "";
+      const arr = lines[r].split("\t");
+      return (arr[c] ?? "").toString().trim();
+    };
+
+    return {
+      grid,
+      rate: getCell(rateCell),
+      news: getCell(newsCell),
+      brandsUrl: getCell(brandsImgCell),
+    };
+  }, [tsvText, rows, cols, rateCell, newsCell, brandsImgCell]);
+
+  // высота компонента, чтобы экран Adalo нормально скроллился
+  const totalHeight = useMemo(() => {
+    const hasHeader = firstRowHeader && parsed.grid.length > 0 ? 1 : 0;
+    const dataRows = Math.max(0, parsed.grid.length - hasHeader);
+    const tableH = (hasHeader ? headerHeight : 0) + dataRows * rowHeight;
+
+    const heroH = fontSize * 1.6 + fontSize * 2;
+    let extra = 0;
+    if (parsed.news) extra += fontSize * 3 + 12;
+    if (parsed.brandsUrl) extra += brandsImgHeight + (fontSize + 18);
+
+    return padding * 2 + heroH + tableH + extra + 12;
+  }, [
+    parsed.grid,
+    parsed.news,
+    parsed.brandsUrl,
+    firstRowHeader,
+    headerHeight,
+    rowHeight,
+    fontSize,
+    padding,
+    brandsImgHeight,
+  ]);
+
+  const styles = useMemo(
+    () =>
+      StyleSheet.create({
+        container: { padding, width: "100%" },
+        heroWrap: { alignItems: "center", marginBottom: 12 },
+        line1: {
+          fontWeight: "700",
+          fontSize: Math.max(16, fontSize + 8),
+          color: accentColor,
+          textAlign: "center",
+        },
+        line2: {
+          marginTop: 6,
+          fontWeight: "700",
+          fontSize: Math.max(18, fontSize + 14),
+          color: accentColor,
+          textAlign: "center",
+        },
+
+        sectionTitle: {
+          marginTop: 10,
+          marginBottom: 6,
+          fontWeight: "700",
+          fontSize: fontSize + 2,
+          color: textColor,
+          textAlign: "left",
+        },
+        newsBox: {
+          marginTop: 6,
+          marginBottom: 8,
+          paddingVertical: 6,
+          paddingHorizontal: 10,
+          borderWidth: 1,
+          borderColor: borderColor,
+          borderRadius: 6,
+          backgroundColor: "#fff",
+        },
+        newsText: {
+          color: textColor,
+          fontSize,
+          lineHeight: Math.round(fontSize * 1.3),
+          textAlign: "left",
+        },
+
+        table: { borderWidth: 0, width: "100%", marginTop: 8 },
+        row: { flexDirection: "row", width: "100%" },
+        cell: {
+          borderWidth: 1,
+          borderColor,
+          height: rowHeight,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingHorizontal: 6,
+          flex: 1,
+        },
+        headCell: {
+          borderWidth: 1,
+          borderColor,
+          height: headerHeight,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingHorizontal: 6,
+          flex: 1,
+          backgroundColor: "#fafafa",
+        },
+        txt: { color: textColor, fontSize, textAlign: "center" },
+        headTxt: {
+          color: textColor,
+          fontSize,
+          fontWeight: "700",
+          textAlign: "center",
+        },
+
+        brandsWrap: { marginTop: 12, alignItems: "center" },
+        brandsTitle: {
+          fontWeight: "700",
+          color: textColor,
+          fontSize: fontSize + 2,
+          marginBottom: 8,
+          textAlign: "center",
+        },
+        brandsImg: {
+          width: "100%",
+          height: brandsImgHeight,
+          resizeMode: "contain",
+        },
+
+        spacer: { height: 1 },
+      }),
+    [
+      padding,
+      fontSize,
+      accentColor,
+      textColor,
+      borderColor,
+      rowHeight,
+      headerHeight,
+      brandsImgHeight,
+    ]
+  );
+
+  const headerRow =
+    firstRowHeader && parsed.grid.length > 0 ? parsed.grid[0] : null;
+  const bodyRows =
+    firstRowHeader && parsed.grid.length > 1 ? parsed.grid.slice(1) : parsed.grid;
+
+  const hasNews = parsed.news && parsed.news.trim().length > 0;
+  const hasBrandImg =
+    parsed.brandsUrl && /^https?:\/\//i.test(parsed.brandsUrl.trim());
+
+  return (
+    <View style={{ width: "100%", height: totalHeight }}>
+      <View style={styles.container}>
+        {/* 1) Курс */}
+        <View style={styles.heroWrap} pointerEvents="none">
+          <Text style={styles.line1}>Курс на {kyivDateDDMMYY()}</Text>
+          <Text style={styles.line2}>{parsed.rate ?? "--"}</Text>
+        </View>
+
+        {/* 2) Новости (если есть G2) */}
+        {hasNews && (
+          <View>
+            <Text style={styles.sectionTitle}>Новости</Text>
+            <View style={styles.newsBox}>
+              <Text style={styles.newsText}>{parsed.news}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* 3) Таблица */}
+        <View style={styles.table}>
+          {headerRow && (
+            <View style={styles.row}>
+              {headerRow.map((cell, i) => (
+                <View key={`h-${i}`} style={styles.headCell}>
+                  <Text style={styles.headTxt} numberOfLines={2}>
+                    {cell}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {bodyRows.map((r, ri) => (
+            <View key={`r-${ri}`} style={styles.row}>
+              {r.map((cell, ci) => (
+                <View key={`c-${ri}-${ci}`} style={styles.cell}>
+                  <Text style={styles.txt} numberOfLines={1}>
+                    {cell}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+
+        {/* 4) Бренды (если есть URL в I2) */}
+        {hasBrandImg && (
+          <View style={styles.brandsWrap}>
+            <Text style={styles.brandsTitle}>
+              Бонус начисляется за следующие бренды:
+            </Text>
+            <Image source={{ uri: parsed.brandsUrl }} style={styles.brandsImg} />
+          </View>
+        )}
+
+        <View style={styles.spacer} />
+      </View>
+    </View>
+  );
+}
